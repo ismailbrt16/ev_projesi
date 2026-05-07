@@ -1,6 +1,7 @@
 streamlit
-streamlit-folium
-folium
 pandas
+folium
+streamlit-folium
+streamlit-js-eval
 requests
 geocoder
