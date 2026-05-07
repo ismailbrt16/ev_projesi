@@ -22,12 +22,15 @@ def konumu_otomatik_bul():
 
 def sicaklik_getir(sehir_adi):
     api_key = "5ea92f3cce5b21df053a6fa7f31fd0e5"
-    if sehir_adi == "Mevcut Konumunuz": return 18.5
-    url = f"http://api.openweathermap.org/data/2.5/weather?q={sehir_adi.strip()}&appid={api_key}&units=metric"
+    # Eğer GPS aktifse varsayılan olarak Bilecik veya IP şehrinin havasını çek
+    hedef_sehir = "Bilecik" if sehir_adi == "Mevcut Konumunuz" else sehir_adi
+    
+    url = f"http://api.openweathermap.org/data/2.5/weather?q={hedef_sehir.strip()}&appid={api_key}&units=metric"
     try:
         response = requests.get(url).json()
-        if response.get("cod") == 200: return response['main']['temp']
-        return 15.0
+        if response.get("cod") == 200:
+            return response['main']['temp']
+        return 15.0 # Hata olursa sabit değer
     except:
         return 12.0
 
@@ -68,7 +71,12 @@ sicaklik = sicaklik_getir(temiz_sehir)
 arac = st.sidebar.selectbox("Aracınız", ["Togg T10X", "Tesla Model Y", "Fiat 500e"])
 mevcut_sarj = st.sidebar.slider("Mevcut Şarj (%)", 0, 100, 40)
 otomatik_trafik = trafik_durumu_simule_et()
-mevcut_trafik = st.sidebar.slider("Mevcut Trafik (%)", 0, 100, otomatik_trafik)
+# Trafik değerini hafızaya al (Sayfa her yenilendiğinde değişmez)
+if 'trafik_sabit' not in st.session_state:
+    st.session_state.trafik_sabit = trafik_durumu_simule_et()
+
+# Slider'ın başlangıç değerini hafızadaki bu sabit değerden al
+mevcut_trafik = st.sidebar.slider("Mevcut Trafik (%)", 0, 100, st.session_state.trafik_sabit)
 
 if mevcut_trafik > 70:
     st.sidebar.error("🔴 Yoğun Trafik: Menzil %20 azalıyor!")
@@ -104,7 +112,7 @@ elif tahmini_menzil < 120:
 else:
     st.success(f"✅ **Yolculuk Güvenli:** Mevcut menzil yeterli. Şarj gerekirse **{onerilen_istasyon}** en iyi seçenektir.")
 
-# --- 6. HARİTA VE İSTASYONLAR ---
+# --- 6. HARİTA VE İSTASYON YÖNETİMİ (TAM OTOMATİK) ---
 istasyon_verileri = {
     "Bilecik": pd.DataFrame({'ad': ['Trugo', 'Eşarj', 'ZES'], 'lat': [40.142, 40.145, 40.150], 'lon': [29.979, 29.975, 29.985]}),
     "Kütahya": pd.DataFrame({'ad': ['ZES (Lalin)', 'Eşarj (Vazo)'], 'lat': [39.421, 39.418], 'lon': [29.986, 29.982]}),
@@ -112,42 +120,55 @@ istasyon_verileri = {
     "Eskişehir": pd.DataFrame({'ad': ['Eşarj (Espark)', 'ZES'], 'lat': [39.776, 39.780], 'lon': [30.520, 30.530]})
 }
 
-# En yakın ili bul
+# 1. En yakın şehri ve istasyon anahtarını belirle
 if loc_data and loc_data.get('coords'):
     lat_gps, lon_gps = loc_data['coords']['latitude'], loc_data['coords']['longitude']
-    en_yakin_il, min_d = "Bilecik", float('inf')
+    istasyon_key, min_d = "Bilecik", float('inf')
     for sehir, koord in sehir_merkezleri.items():
         d = math.sqrt((lat_gps - koord[0])**2 + (lon_gps - koord[1])**2)
-        if d < min_d: min_d, en_yakin_il = d, sehir
-    aktif_sehir = en_yakin_il if temiz_sehir == "Mevcut Konumunuz" else temiz_sehir
+        if d < min_d:
+            min_d, istasyon_key = d, sehir
 else:
-    aktif_sehir = temiz_sehir
+    istasyon_key = temiz_sehir if temiz_sehir in istasyon_verileri else "Bilecik"
 
-st.subheader(f"📍 {aktif_sehir} Yakınındaki Şarj İstasyonları")
+st.subheader(f"📍 {istasyon_key} Yakınındaki Şarj İstasyonları")
 
-# HARİTA OBJESİNİ BAŞLAT (Kritik eksik buradaydı)
-m = folium.Map(location=merkez, zoom_start=14)
+# 2. Harita objesini sıfırdan oluştur
+m = folium.Map(location=merkez, zoom_start=15)
 
-# Mavi İkon (Senin Konumun)
-folium.Marker(location=merkez, popup="Şu an buradasınız", icon=folium.Icon(color='blue', icon='user', prefix='fa')).add_to(m)
+# 3. Kendi konumunu ekle (Mavi İkon)
+folium.Marker(
+    location=merkez, 
+    popup="Şu an buradasınız", 
+    icon=folium.Icon(color='blue', icon='user', prefix='fa')
+).add_to(m)
 
-# İstasyonları Ekle
-df_istasyon = istasyon_verileri.get(aktif_sehir, pd.DataFrame(columns=['ad', 'lat', 'lon']))
+# 4. İstasyonları Çiz
+df_istasyon = istasyon_verileri.get(istasyon_key, istasyon_verileri["Bilecik"])
+
 for i, row in df_istasyon.iterrows():
+    # Mesafe Hesapla
     R = 6371
-    lat1, lon1, lat2, lon2 = map(math.radians, [merkez[0], merkez[1], row['lat'], row['lon']])
+    lat1, lon1 = math.radians(merkez[0]), math.radians(merkez[1])
+    lat2, lon2 = math.radians(row['lat']), math.radians(row['lon'])
     dlat, dlon = lat2 - lat1, lon2 - lon1
     a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
     mesafe = round(R * c, 2)
     
-    doluluk = random.randint(10, 95)
+    # Akıllı Yoğunluk Simülasyonu
+    su_an_saat = datetime.now().hour
+    if 17 <= su_an_saat <= 20: doluluk = random.randint(70, 98)
+    elif 8 <= su_an_saat <= 10: doluluk = random.randint(60, 85)
+    else: doluluk = random.randint(15, 60)
+    
     renk = 'red' if doluluk > 80 else ('orange' if doluluk > 50 else 'green')
+
     folium.Marker(
         [row['lat'], row['lon']],
         popup=f"<b>{row['ad']}</b><br>Uzaklık: {mesafe} km<br>Doluluk: %{doluluk}",
         icon=folium.Icon(color=renk, icon='bolt', prefix='fa')
     ).add_to(m)
 
-# HARİTAYI ÇİZ
-st_folium(m, width=1000, height=500, key="harita_final", returned_objects=[])
+# 5. Haritayı Ekrana Bas
+st_folium(m, width=1000, height=500, key="harita_final_v2", returned_objects=[])
