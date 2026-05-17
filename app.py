@@ -101,7 +101,8 @@ if mevcut_trafik > 70:
 else:
     st.sidebar.success("🟢 Trafik Akıcı.")
 st.sidebar.info(f"🌡️ Anlık Sıcaklık: {sicaklik}°C")
-
+# --- İLK AÇILIŞTAKİ GECİKMELER İÇİN GÜVENLİK SİBOPLARI ---
+tahmini_menzil = 200.0  # Veriler ilk saniyede yüklenirken hata vermemesi için geçici değer
 # --- 4. HESAPLAMALAR VE KATSAYILAR ---
 # --- 1. Sıcaklık Etkisi (Bilimsel Verimlilik Katsayıları) ---
 if sicaklik < 0:
@@ -343,7 +344,11 @@ with placeholder.container():
         elif sicaklik > 35:
             menzil_kaybi = round((sicaklik - 35) * 2.0 + 12, 1)
             
-gercek_menzil = round(tahmini_menzil - menzil_kaybi, 1)
+# --- 344. SATIR CİVARINDAKİ ESKİ SATIRIN YERİNE BURAYI YAPIŞTIR ---
+try:
+    gercek_menzil = round(tahmini_menzil - menzil_kaybi, 1)
+except:
+    gercek_menzil = 200.0  # Eğer ilk saniyede veri yetişmezse sistem kilitlenmesin diye yedek değer
 m = folium.Map(location=merkez, zoom_start=8) # 15 yerine 8 yaptık
 # --- 2. MENZİL ÇEMBERİ ---
 # --- 2. MENZİL ÇEMBERİ ---
