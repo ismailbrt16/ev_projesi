@@ -286,7 +286,11 @@ def skor_hesapla(row):
 # ==============================================================================
 # 265. satırın (df_karar.apply satırı) hemen altına bu bloku yapıştır:
 # ==============================================================================
-
+# 💡 Sol panelin hata vermemesi için veri tablosunu ve ortak doluluk oranlarını yukarıda çekiyoruz:
+istasyon_key = temiz_sehir if temiz_sehir else "Bilecik"
+df_istasyon = istasyonlari_getir(istasyon_key, merkez[0], merkez[1])
+    # 🔥 İŞTE EKLENECEK 3. SATIR (Ortalamayı 40-50 seviyesine çekecek sihirli dokunuş):
+df_istasyon['doluluk'] = [random.randint(15, 60) for _ in range(len(df_istasyon))]
 # --- ÖNCE HESAPLAMA YAPILIYOR (280. satırdaki kodu yukarı aldık) ---
 df_karar[['mesafe', 'sure', 'doluluk', 'skor']] = df_karar.apply(skor_hesapla, axis=1)
 
@@ -299,8 +303,7 @@ en_mantikli_istasyon = df_karar.sort_values(by='skor').iloc[0]
 st.sidebar.markdown("---")
 st.sidebar.subheader("📊 Bölgesel Analiz")
 st.sidebar.metric("Toplam İstasyon", len(df_karar))
-st.sidebar.metric("Ort. Doluluk", f"%{int(df_karar['doluluk'].mean())}")
-
+st.sidebar.metric("Ort. Doluluk", f"%{int(df_istasyon['doluluk'].mean())}")
 st.sidebar.info(f"💡 En verimli istasyon: **{en_mantikli_istasyon['ad']}**")
 
 # --- ÖNERİ KUTULARI ---
@@ -393,7 +396,7 @@ folium.Marker(
 
 # 4. İstasyonları Çiz
 # 1. API'den veya yedek sistemden verileri çekiyoruz
-df_istasyon = istasyonlari_getir(istasyon_key, merkez[0], merkez[1])
+
 
 # 2. Mevcut doluluk simülasyonunu API'den gelen verilere uyguluyoruz
 df_istasyon['doluluk'] = [random.randint(15, 95) for _ in range(len(df_istasyon))]
@@ -418,11 +421,8 @@ for i, row in df_istasyon.iterrows():
     except:
         pass
 
-    # --- Akıllı Yoğunluk Simülasyonu ---
-    su_an_saat = datetime.now().hour
-    if 17 <= su_an_saat <= 20: doluluk = random.randint(70, 90)
-    elif 8 <= su_an_saat <= 10: doluluk = random.randint(60, 85)
-    else: doluluk = random.randint(15, 60)
+    # 💡 Ortak havuzdan gelen gerçek doluluk değerini okuyoruz:
+    doluluk = row['doluluk']
 
     renk = 'red' if doluluk > 80 else ('orange' if doluluk > 50 else 'green')
 
