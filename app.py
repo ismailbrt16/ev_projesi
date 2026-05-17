@@ -69,7 +69,24 @@ else:
 
 # VERİ GİRİŞLERİ
 sicaklik = sicaklik_getir(temiz_sehir)
-arac = st.sidebar.selectbox("Aracınız", ["Togg T10X", "Tesla Model Y", "Fiat 500e"])
+# --- ARAÇ MODEL VE GÜNCEL RESMİ WLTP MENZİLLERİ (2026) ---
+arac_bilgileri = {
+        "Togg T10X ": 523,
+        "Togg T10F ": 314,
+        "Tesla Model Y (Long Range AWD)": 533,
+        "Tesla Model Y ( Standart)": 455,
+        "BYD ATTO 3 (Design)": 420,
+        "BYD SEAL (AWD High Performance)": 520,
+        "Renault Megane E-Tech (Techno)": 450,
+        "Fiat 500e (La Prima)": 320,
+        "BMW i4 eDrive40": 590
+    }
+    
+    # Sol paneldeki dinamik araç seçim kutusu
+arac = st.sidebar.selectbox("Aracınız", list(arac_bilgileri.keys()))
+    
+    # Seçilen aracın maksimum menzil değerini alt satırlarda kullanabilmek için değişkene atıyoruz
+maks_menzil = arac_bilgileri[arac]
 mevcut_sarj = st.sidebar.slider("Mevcut Şarj (%)", 0, 100, 40)
 otomatik_trafik = trafik_durumu_simule_et()
 # Trafik değerini hafızaya al (Sayfa her yenilendiğinde değişmez)
@@ -100,9 +117,12 @@ else:
 # Trafik %70 üzerindeyse menzili %20 düşür
 trafik_etkisi = 0.8 if mevcut_trafik > 70 else 1.0
 
-# 3. Nihai Menzil Hesabı (Baz Menzil: %1 şarj = 4km kabul edilmiştir)
-baz_menzil = mevcut_sarj * 4 
-tahmini_menzil = baz_menzil * menzil_katsayisi * trafik_etkisi
+# --- 107. SATIRDAN İTİBAREN BU KISMI GÜNCELLEMELSİN ---
+# Sabit 4 kat sayısı yerine, seçilen aracın maks_menzil değerini şarj yüzdesine oranlıyoruz
+tahmini_menzil = round(maks_menzil * (mevcut_sarj / 100), 1)
+
+    # Hava durumu ve trafik etkilerini doğrudan bu dinamik menzil üzerinden düşüyoruz
+tahmini_menzil = tahmini_menzil * menzil_katsayisi * trafik_etkisi 
 
 # Hesaplamanın doğru yapıldığını anlamak için Metrikleri de buna bağla
 col1, col2, col3 = st.columns(3)
@@ -222,53 +242,148 @@ istasyon_key = temiz_sehir if temiz_sehir else "Bilecik"
 df_karar = istasyonlari_getir(istasyon_key, merkez[0], merkez[1])
 df_karar = istasyonlari_getir(istasyon_key, merkez[0], merkez[1])
 def skor_hesapla(row):
-    # 1. Mesafe Hesabı (Haversine)
-    R = 6371
+    # 1. Koordinatları alıyoruz
     lat1, lon1 = math.radians(merkez[0]), math.radians(merkez[1])
     lat2, lon2 = math.radians(row['lat']), math.radians(row['lon'])
-    
-    d = R * 2 * math.atan2(
-        math.sqrt(math.sin((lat2-lat1)/2)**2 + math.cos(lat1)*math.cos(lat2)*math.sin((lon2-lon1)/2)**2),
-        math.sqrt(1-(math.sin((lat2-lat1)/2)**2 + math.cos(lat1)*math.cos(lat2)*math.sin((lon2-lon1)/2)**2))
-    )
+    R = 6371
 
-    # 2. 🔥 AKILLI SİMÜLASYON (Senin fonksiyonun entegre hali)
+    # 2. Kuş uçuşu mesafe
+    mesafe_km = R * 2 * math.asin(math.sqrt(math.sin((lat2-lat1)/2)**2 + math.cos(lat1)*math.cos(lat2)*math.sin((lon2-lon1)/2)**2))
+
+    # 🔥 3. DÜZELTME KATSAYISI (25 -> 32 yapan sihirli değnek)
+    mesafe_km = mesafe_km * 1.28
+    sure_dk = (mesafe_km / 45) * 60 
+
+    # 4. Akıllı Doluluk Simülasyonu
     saat = datetime.now().hour
-    if 18 <= saat <= 22:
-        doluluk = random.randint(75, 98)  # Akşam pik saatler
-    elif 12 <= saat <= 14:
-        doluluk = random.randint(55, 80)  # Öğle molası yoğunluğu
-    elif 0 <= saat <= 6:
-        doluluk = random.randint(5, 25)   # Gece sakinliği
-    else:
-        doluluk = random.randint(30, 60)  # Standart saatler
+    if 18 <= saat <= 22: doluluk = random.randint(75, 98)
+    elif 12 <= saat <= 14: doluluk = random.randint(55, 80)
+    elif 0 <= saat <= 6: doluluk = random.randint(5, 25)
+    else: doluluk = random.randint(30, 60)
 
-    # 3. Ağırlıklı Skor Algoritması
-    # Mesafe %70, Doluluk %30 etkili
-    skor = (d * 0.7) + (doluluk * 0.3)
+    # 5. Skor (Süre %60, Doluluk %40 etkili)
+    skor = (sure_dk * 0.6) + (doluluk * 0.4)
 
-    return pd.Series([round(d, 2), doluluk, round(skor, 2)], index=['mesafe', 'doluluk', 'skor'])
+    return pd.Series([round(mesafe_km, 2), round(sure_dk, 1), doluluk, round(skor, 2)], 
+                     index=['mesafe', 'sure', 'doluluk', 'skor'])
+
+    # 3. Akıllı Simülasyon: Saatlik Doluluk (Az önce eklediğimiz mantık)
+    saat = datetime.now().hour
+    if 18 <= saat <= 22: doluluk = random.randint(75, 98)
+    elif 12 <= saat <= 14: doluluk = random.randint(55, 80)
+    elif 0 <= saat <= 6: doluluk = random.randint(5, 25)
+    else: doluluk = random.randint(30, 60)
+
+    # 4. 🔥 YENİ NESİL SKORLAMA (Süre bazlı!)
+    # Gerçek hayatta kullanıcı mesafe yerine "kaç dakikada varırım"a bakar.
+    # Süre %60, Doluluk %40 etkili
+    skor = (sure_dk * 0.6) + (doluluk * 0.4)
+
+    return pd.Series([round(mesafe_km, 2), round(sure_dk, 1), doluluk, round(skor, 2)], 
+                     index=['mesafe', 'sure', 'doluluk', 'skor'])
 
 # Hesaplamayı yap ve en iyi skora sahip olanı seç
-df_karar[['mesafe', 'doluluk', 'skor']] = df_karar.apply(skor_hesapla, axis=1)
-en_mantikli = df_karar.sort_values(by='skor').iloc[0]
+# ==============================================================================
+# 265. satırın (df_karar.apply satırı) hemen altına bu bloku yapıştır:
+# ==============================================================================
+
+# --- ÖNCE HESAPLAMA YAPILIYOR (280. satırdaki kodu yukarı aldık) ---
+df_karar[['mesafe', 'sure', 'doluluk', 'skor']] = df_karar.apply(skor_hesapla, axis=1)
+
+# En mantıklı istasyonu şimdi hesaplayabiliriz (Veriler artık var)
+en_mantikli_istasyon = df_karar.sort_values(by='skor').iloc[0]
+
+
+# --- SONRA EKRANA BASILIYOR (İstatistik Paneli) ---
+# --- 1. İSTATİSTİK PANELİ (SIDEBAR) ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("📊 Bölgesel Analiz")
+st.sidebar.metric("Toplam İstasyon", len(df_karar))
+st.sidebar.metric("Ort. Doluluk", f"%{int(df_karar['doluluk'].mean())}")
+
+st.sidebar.info(f"💡 En verimli istasyon: **{en_mantikli_istasyon['ad']}**")
 
 # --- ÖNERİ KUTULARI ---
 placeholder = st.empty() # Streamlit alanını rezerve eder
 with placeholder.container():
     # Mevcut tüm if/elif/else öneri kutularını ve hava durumu uyarısını buraya al
     if tahmini_menzil < 50:
-        st.error(f"⚠️ **ACİL DURUM:** En mantıklı nokta: **{en_mantikli['ad']}**")
+            st.error(f"⚠️ **ACİL DURUM:** En mantıklı nokta: **{en_mantikli_istasyon['ad']}**")
     elif tahmini_menzil < 120:
-        st.warning(f"🔔 **Dikkat:** En verimli istasyon: **{en_mantikli['ad']}**")
+      st.warning(f"🔔 **Dikkat:** En verimli istasyon: **{en_mantikli_istasyon['ad']}**")
     else:
-        st.success(f"✅ **Akıllı Öneri:** Sizin için en uygun istasyon: **{en_mantikli['ad']}**")
-    
+         st.success(f"✅ **Akıllı Öneri:** Sizin için en uygun istasyon: **{en_mantikli_istasyon['ad']}**")    
     if sicaklik < 10:
-        st.info(f"❄️ **Hava {sicaklik}°C:** Menziliniz otomatik olarak revize edilmiştir.")
+    #    st.info(f"❄️ **Hava {sicaklik}°C:** Menziliniz otomatik olarak revize edilmiştir.")
 # 2. Harita objesini sıfırdan oluştur
-m = folium.Map(location=merkez, zoom_start=15)
+# --- HARİTA OLUŞTURMA VE MENZİL ÇEMBERİ ---
+# 299. satırdan itibaren burayı yapıştır:
+# --- GENEL HAVA DURUMU VE DİNAMİK MENZİL ETKİSİ SİMÜLASYONU ---
+        if sicaklik < 10:
+            # Soğuk hava batarya iç direnci ve kabine ısıtma yükü kaybı
+            menzil_kaybi = round((10 - sicaklik) * 1.5 + 10, 1)
+            st.info(f"❄️ **Hava {sicaklik}°C:** Düşük sıcaklık sebebiyle batarya verimliliği azalmıştır. Menziliniz otomatik olarak **{menzil_kaybi} km** düşürülerek revize edilmiştir.")
+            
+        elif sicaklik > 35:
+            # Aşırı sıcak hava ve yoğun batarya/kabine soğutma (AC) yükü kaybı
+            menzil_kaybi = round((sicaklik - 35) * 2.0 + 12, 1)
+            st.warning(f"🔥 **Hava {sicaklik}°C:** Aşırı yüksek sıcaklık! Batarya ve kabin soğutma sistemleri (AC) maksimum yükte çalıştığı için menziliniz otomatik olarak **{menzil_kaybi} km** düşürülerek revize edilmiştir.")
+            
+        else:
+            # İdeal çalışma aralığı
+            st.success(f"☀️ **Hava {sicaklik}°C:** Optimum hava koşulları. Bataryanız en yüksek verimlilik aralığında çalışıyor, ek bir menzil kaybı bulunmuyor.")
 
+# --- HARİTA VE POPUP İÇİN KM SENKRONİZASYONU ---
+        menzil_kaybi = 0.0
+        if sicaklik < 10:
+            menzil_kaybi = round((10 - sicaklik) * 1.5 + 10, 1)
+        elif sicaklik > 35:
+            menzil_kaybi = round((sicaklik - 35) * 2.0 + 12, 1)
+            
+gercek_menzil = round(tahmini_menzil - menzil_kaybi, 1)
+m = folium.Map(location=merkez, zoom_start=8) # 15 yerine 8 yaptık
+# --- 2. MENZİL ÇEMBERİ ---
+# --- 2. MENZİL ÇEMBERİ ---
+# Haritanın altındaki folium.Circle alanı (Hizalaması st.success ile aynı hizada kalmalı)
+folium.Circle(
+    location=merkez,
+    radius=gercek_menzil * 1000, # Kilometreyi metreye çevirdik
+    color="#22c55e",
+    fill=True,
+    fill_opacity=0.04,
+    popup=f"Maksimum Güvenli Menzil Sınırı: {gercek_menzil} km"
+).add_to(m)
+# --- 3. DİNAMİK ROTA ÇİZİMİ (EN MANTIKLI İSTASYONA) ---
+try:
+    # Akıllı öneri istasyonunun koordinatları
+    target_lat = en_mantikli_istasyon['lat']
+    target_lon = en_mantikli_istasyon['lon']
+    
+    # Ücretsiz OSRM API ile rota çizgisini çekiyoruz
+    route_url = f"http://router.project-osrm.org/route/v1/driving/{merkez[1]},{merkez[0]};{target_lon},{target_lat}?overview=full&geometries=geojson"
+    route_res = requests.get(route_url, timeout=3).json()
+    
+    if route_res['code'] == 'Ok':
+        line_coords = route_res['routes'][0]['geometry']['coordinates']
+        # Harita için koordinat sırasını (Lat, Lon) yapıyoruz
+        line_coords = [[c[1], c[0]] for c in line_coords]
+        
+        folium.PolyLine(
+            line_coords,
+            color="#0284c7", # Mavi navigasyon rotası
+            weight=5,
+            opacity=0.8,
+            tooltip="Önerilen Akıllı Rota"
+        ).add_to(m)
+except Exception as e:
+    pass
+
+# ==========================================
+# BUNDAN SONRA SENİN MEVCUT KODUN DEVAM EDECEK:
+# ==========================================
+
+# 301. Satır (Mevcut kodun) -> # # 3. Kendi konumunu ekle (Mavi İkon)
+# 302. Satır (Mevcut kodun) -> folium.Marker( ... )
 # 3. Kendi konumunu ekle (Mavi İkon)
 folium.Marker(
     location=merkez, 
@@ -282,8 +397,9 @@ df_istasyon = istasyonlari_getir(istasyon_key, merkez[0], merkez[1])
 
 # 2. Mevcut doluluk simülasyonunu API'den gelen verilere uyguluyoruz
 df_istasyon['doluluk'] = [random.randint(15, 95) for _ in range(len(df_istasyon))]
+# --- 380. Satırdan İtibaren Burayı Değiştiriyoruz ---
 for i, row in df_istasyon.iterrows():
-    # Mesafe Hesapla
+    # --- Mesafe Hesapla (Kuş Uçuşu Algoritması Sabit Kalıyor) ---
     R = 6371
     lat1, lon1 = math.radians(merkez[0]), math.radians(merkez[1])
     lat2, lon2 = math.radians(row['lat']), math.radians(row['lon'])
@@ -291,13 +407,23 @@ for i, row in df_istasyon.iterrows():
     a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
     mesafe = round(R * c, 2)
-    
-    # Akıllı Yoğunluk Simülasyonu
+
+    # 🌟 OSRM API İLE GERÇEK KARAYOLU MESAFESİNİ SENKRONİZE ETME 🌟
+    gosterilecek_mesafe = mesafe  # Eğer API yanıt vermezse yedek olarak eski kuş uçuşunu tutar
+    try:
+        osrm_url = f"http://router.project-osrm.org/route/v1/driving/{merkez[1]},{merkez[0]};{row['lon']},{row['lat']}?overview=false"
+        osrm_res = requests.get(osrm_url, timeout=2).json()
+        if osrm_res['code'] == 'Ok':
+            gosterilecek_mesafe = round(osrm_res['routes'][0]['distance'] / 1000, 2)
+    except:
+        pass
+
+    # --- Akıllı Yoğunluk Simülasyonu ---
     su_an_saat = datetime.now().hour
-    if 17 <= su_an_saat <= 20: doluluk = random.randint(70, 98)
+    if 17 <= su_an_saat <= 20: doluluk = random.randint(70, 90)
     elif 8 <= su_an_saat <= 10: doluluk = random.randint(60, 85)
     else: doluluk = random.randint(15, 60)
-    
+
     renk = 'red' if doluluk > 80 else ('orange' if doluluk > 50 else 'green')
 
     # --- YOL TARİFİ VE GELİŞMİŞ POPUP ---
@@ -307,7 +433,8 @@ for i, row in df_istasyon.iterrows():
         <div style="font-family: Arial, sans-serif; width: 160px; color: black;">
             <h4 style="margin-bottom:5px;">{row['ad']}</h4>
             <p style="font-size:12px; margin-bottom:10px;">
-                <b>Uzaklık:</b> {mesafe} km<br>
+                
+                 <b>Uzaklık:</b> {gosterilecek_mesafe} km<br>
                 <b>Doluluk:</b> %{doluluk}
             </p>
             <a href="{yol_tarifi_url}" target="_blank" 
@@ -324,5 +451,85 @@ for i, row in df_istasyon.iterrows():
         icon=folium.Icon(color=renk, icon='bolt', prefix='fa')
     ).add_to(m)
 
+
+
+# 🔥 TAM BURAYA YAPISTIRACAKSIN:
+# --- EN MANTIKLI İSTASYONA ÖZEL BELİRTİCİ (ALTIN YILDIZ) EKLEME ---
+# --- EN MANTIKLI İSTASYONA ÖZEL YILDIZ VE YOL TARİFİ LİNKİ ---
+# Google Haritalar yol tarifi linkini dinamik olarak oluşturuyoruz
+google_maps_url = f"https://www.google.com/maps/dir/?api=1&destination={en_mantikli_istasyon['lat']},{en_mantikli_istasyon['lon']}"
+
+folium.Marker(
+    location=[en_mantikli_istasyon['lat'], en_mantikli_istasyon['lon']],
+    # HTML kullanarak tıklayınca açılan kutuyu (popup) buton haline getirdik:
+    popup=folium.Popup(f"""
+        <div style="font-family: Arial, sans-serif; text-align: center;">
+            <b style="color: #1e3a8a;">🏆 Önerilen Optimum İstasyon</b><br>
+            <span style="font-size: 13px;">{en_mantikli_istasyon['ad']}</span><br><br>
+            <a href="{google_maps_url}" target="_blank" style="
+                background-color: #0284c7; 
+                color: white; 
+                padding: 6px 12px; 
+                text-decoration: none; 
+                border-radius: 4px; 
+                font-weight: bold;
+                display: inline-block;
+                font-size: 12px;
+            ">🌐 Yol Tarifi Al</a>
+        </div>
+    """, max_width=250),
+    tooltip="🌟 En Optimum İstasyon! (Yol tarifi için tıklayın)",
+    icon=folium.Icon(
+        color="cadetblue",
+        icon="star",
+        icon_color="#f59e0b",
+        prefix="fa"
+    )
+).add_to(m)
+
+# 402. satır (Haritayı ekrana basan mevcut kodun)
 # 5. Haritayı Ekrana Bas
-st_folium(m, width=1000, height=500, key="harita_final_v2", returned_objects=[])
+st_folium(m, width=1000, height=500, key=f"harita_final_{tahmini_menzil}", returned_objects=[])
+
+# ==========================================
+
+# --- 3. PARÇA: İSTASYON DETAY KARTLARI ---
+st.markdown("### 🏆 Önemli Seçenekleri")
+col1, col2, col3 = st.columns(3)
+
+# 1. Kart: Akıllı Seçim
+# 447. Satır (Mevcut kodun)
+with col1:
+    # 448. Satır (Mevcut kodun)
+    st.success(f"🌟 **AKILLI ÖNERİ**\n\n**{en_mantikli_istasyon['ad']}**\n\n🎯 Skor: {en_mantikli_istasyon['skor']}\n\n⏱️ Süre: {en_mantikli_istasyon['sure']} dk")
+    
+        # 🔥 TAM BURAYA (449. SATIRA) BU BLOKU EKLE:
+    # 453. satır dikey hizası
+    google_maps_url = f"https://www.google.com/maps/dir/?api=1&destination={en_mantikli_istasyon['lat']},{en_mantikli_istasyon['lon']}"
+    st.markdown(f"""
+        <a href="{google_maps_url}" target="_blank" style="
+            display: block;
+            text-align: center;
+            background-color: #22c55e;
+            color: white;
+            padding: 8px 16px;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: bold;
+            margin-top: 10px;
+            font-size: 14px;
+        ">🌐 Google Haritalarda Git</a>
+    """, unsafe_allow_html=True) # <-- Bu satır st.markdown ile tam alt alta aynı hizada olmalı!
+
+# 450. Satır (2. Kartın başladığı mevcut yerin)
+# # 2. Kart: En Yakın İstasyon
+
+# 2. Kart: En Yakın İstasyon
+en_yakin_istasyon = df_karar.sort_values("mesafe").iloc[0]
+with col2:
+    st.info(f"📍 **EN YAKIN İSTASYON**\n\n**{en_yakin_istasyon['ad']}**\n\n📏 Mesafe: {en_yakin_istasyon['mesafe']} km\n\n⏱️ Süre: {en_yakin_istasyon['sure']} dk")
+
+# 3. Kart: En Boş İstasyon
+en_bos_istasyon = df_karar.sort_values("doluluk").iloc[0]
+with col3:
+    st.warning(f"🔋 **EN BOŞ İSTASYON**\n\n**{en_bos_istasyon['ad']}**\n\n⚡ Doluluk: %{en_bos_istasyon['doluluk']}\n\n📏 Mesafe: {en_bos_istasyon['mesafe']} km")
