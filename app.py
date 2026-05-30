@@ -302,8 +302,10 @@ st.sidebar.metric("Ort. Doluluk", f"%{int(df_istasyon['doluluk'].mean())}")
 st.sidebar.info(f"💡 En verimli istasyon: **{en_mantikli_istasyon['ad']}**")
 
 # --- ÖNERİ KUTULARI ---
+# --- ÖNERİ KUTULARI (AKILLI ASİSTAN MODÜLÜ) ---
 placeholder = st.empty() 
 with placeholder.container():
+    # 1. Menzil Durumuna Göre Ana İstasyon Önerisi (Mevcut Yeşil Kutun)
     if tahmini_menzil < 50:
         st.error(f"⚠️ **ACİL DURUM:** En mantıklı nokta: **{en_mantikli_istasyon['ad']}**")
     elif tahmini_menzil < 120:
@@ -311,6 +313,35 @@ with placeholder.container():
     else:
         st.success(f"✅ **Akıllı Öneri:** Sizin için en uygun istasyon: **{en_mantikli_istasyon['ad']}**")    
 
+    # 2. 🎯 YENİ HAVA DURUMU BİLGİLENDİRME VE REHBERLİK KUTUSU
+    if sicaklik < 0:
+        st.info(
+            f"❄️ **Hava {sicaklik}°C (Ekstrem Soğuk):** Batarya kimyası dondurucu sıcaklıktan olumsuz etkilenmektedir. "
+            f"Kabin ve batarya ısıtma sistemleri maksimum yükte çalıştığı için menzilinizde **%30 otomatik revizyon** yapılmıştır. "
+            f"İstasyona varana kadar ani hızlanmalardan kaçınmanız ve rejeneratif frenlemeyi maksimuma almanız önerilir."
+        )
+    elif sicaklik < 10:
+        st.info(
+            f"🍃 **Hava {sicaklik}°C (Kış Şartları):** Düşük hava sıcaklığı sebebiyle batarya verimliliği azalmıştır. "
+            f"Menziliniz otomatik olarak **%15 düşürülerek** revize edilmiştir. Güvenli sürüş için klima sıcaklığını optimum düzeyde tutun."
+        )
+    elif "yağmur" in canli_hava_metni.lower() or "yağış" in canli_hava_metni.lower():
+        st.info(
+            f"🌧️ **Hava Yağmurlu:** Silecekler, farlar ve cam rezistanslarının bataryaya binen ek elektrik yükü ile "
+            f"ıslak zemindeki lastik sürtünme direnci hesaplanarak menziliniz **%8 oranında düşürülmüştür.** "
+            f"Takip mesafenizi koruyarak konfor modunda sürmeye devam edebilirsiniz."
+        )
+    elif sicaklik > 35:
+        st.warning(
+            f"🔥 **Hava {sicaklik}°C (Aşırı Sıcak):** Yüksek sıcaklık batarya hücrelerini zorlamaktadır. "
+            f"Batarya soğutma sistemi ve kabin kliması (AC) maksimum yükte çalıştığı için menziliniz **%10 revize edilmiştir.** "
+            f"İstasyona ulaştığınızda aracınızı mümkünse gölge bir peronda şarj etmeniz batarya sağlığı açısından kritik önem taşır."
+        )
+    else:
+        st.success(
+            f"☀️ **Hava {sicaklik}°C (Optimum Koşullar):** Hava sıcaklığı bataryanız için en ideal çalışma aralığındadır. "
+            f"Ekstra hiçbir batarya veya AC kaybı bulunmamaktadır. Aracınız maksimum WLTP verimliliğiyle çalışıyor, keyifli sürüşler!"
+        )
 gercek_menzil = tahmini_menzil
 
 # ==============================================================================
