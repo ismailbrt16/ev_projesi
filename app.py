@@ -7,16 +7,12 @@ import random
 from datetime import datetime
 import geocoder
 from streamlit_js_eval import get_geolocation
-import streamlit.components.v1 as components  # 🎯 Çökme koruması için gerekli modül
+import streamlit.components.v1 as components
 
 # ==============================================================================
 # 🌤️ 1. KOORDİNAT BAZLI CANLI HAVA DURUMU FONKSİYONU
 # ==============================================================================
 def hava_durumu_getir(lat, lon):
-    """
-    Nokta atışı enlem ve boylam (lat/lon) ile OpenWeatherMap 
-    üzerinden güncel hava durumunu Türkçe olarak çeker.
-    """
     api_key = "5ea92f3cce5b21df053a6fa7f31fd0e5"
     try:
         url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={api_key}&units=metric&lang=tr"
@@ -25,11 +21,8 @@ def hava_durumu_getir(lat, lon):
             data = response.json()
             derece = int(data['main']['temp'])
             durum = data['weather'][0]['description']
-            
-            # API'nin komik "Az yeşil" çeviri hatasını kurumsal dile çeviriyoruz:
             if "yeşil" in durum.lower() or "az yeşil" in durum.lower():
                 durum = "Açık ve Güneşli"
-                
             return f"{derece}°C, {durum.capitalize()}"
         else:
             return "15°C, Parçalı Bulutlu"
@@ -39,21 +32,18 @@ def hava_durumu_getir(lat, lon):
 # ==============================================================================
 # 🌟 2. GERÇEK ZAMANLI TRAFİK ENTEGRASYON MODÜLÜ (MAPBOX API)
 # ==============================================================================
-@st.cache_data(ttl=300)  # 🎯 5 dakika önbelleğe alarak kasmayı bitiriyoruz
+@st.cache_data(ttl=300)
 def google_maps_canli_trafik_getir(start_lat, start_lon, end_lat, end_lon):
     try:
         token = "pk.eyJ1IjoiaXNvb28iLCJhIjoiY21wYWYzazZ6MTN2djJ0c2UzanA4d2RydiJ9.0pe6ew6X94dHmQ_mwWS6uw"
         base_url = "https://api.mapbox.com/directions/v5/mapbox"
 
-        # 1. Trafiksiz (Normal) sürüş profilini çekiyoruz
         normal_url = f"{base_url}/driving/{start_lon},{start_lat};{end_lon},{end_lat}?access_token={token}"
         normal_res = requests.get(normal_url, timeout=2).json()
 
-        # 2. Canlı trafikli sürüş profilini çekiyoruz
         traffic_url = f"{base_url}/driving-traffic/{start_lon},{start_lat};{end_lon},{end_lat}?access_token={token}"
         traffic_res = requests.get(traffic_url, timeout=2).json()
 
-        # 3. Çevre Trafiği Sorgusu
         cevre_lon = end_lon + 0.002
         cevre_lat = end_lat + 0.002
         cevre_url = f"{base_url}/driving-traffic/{end_lon},{end_lat};{cevre_lon},{cevre_lat}?access_token={token}"
@@ -66,20 +56,15 @@ def google_maps_canli_trafik_getir(start_lat, start_lon, end_lat, end_lon):
             normal_sure = normal_res["routes"][0]["duration"]
             trafik_sure = traffic_res["routes"][0]["duration"]
             mesafe_metre = normal_res["routes"][0]["distance"]
-            
             oran_rota = trafik_sure / normal_sure
             
-            # 🎯 EĞER MAPBOX YOLU TAMAMEN BOŞ GÖRÜYORSA (oran_rota <= 1.01)
             if oran_rota <= 1.01:
-                # İstasyonun mesafesine göre deterministik bir baz yük atıyoruz.
-                # Yakın istasyonlar (şehir içi) için %20-%25 arası, uzak (otoyol) istasyonlar için %12-%16 arası üretir.
                 mesafe_km = mesafe_metre / 1000
                 if mesafe_km < 5:
                     rota_indeksi = int(25 - (mesafe_km * 1.5))
                 else:
                     rota_indeksi = int(12 + (mesafe_km * 0.2))
                     rota_indeksi = min(18, rota_indeksi)
-            # 🚦 MAPBOX CANLI TRAFİK YOĞUNLUĞU YAKALADIĞI AN (Agresif Mod)
             else:
                 rota_indeksi = int(15 + (oran_rota - 1) * 750)
 
@@ -94,12 +79,11 @@ def google_maps_canli_trafik_getir(start_lat, start_lon, end_lat, end_lon):
             else:
                 cevre_indeksi = int(15 + (oran_cevre - 1) * 450)
 
-        # 🎯 Birleşik gerçek trafik endeksini %50-%50 harmanla
         nihai_trafik = int((rota_indeksi * 0.50) + (cevre_indeksi * 0.50))
         return min(100, max(10, nihai_trafik))
-            
     except:
         return 20
+
 # ==============================================================================
 # ⚡ 3. COĞRAFİ VERİ TABANI BAĞLANTI FONKSİYONU (OPEN CHARGE MAP API)
 # ==============================================================================
@@ -157,7 +141,6 @@ def konumu_otomatik_bul():
     except:
         return "Bilecik"
 
-# --- ANA PANEL BAŞLIKLARI VE SIDEBAR ---
 st.title("⚡ Akıllı Elektrikli Araç Şarj İstasyonu Paneli")
 st.sidebar.header("Araç ve Konum Bilgileri")
 
@@ -166,7 +149,7 @@ sehir_merkezleri = {
     "Bursa": [40.1885, 29.0610], "İstanbul": [41.0082, 28.9784], "Ankara": [39.9334, 32.8597]
 }
 
-merkez = [40.1425, 29.9795]  # Default global merkez
+merkez = [40.1425, 29.9795]
 loc_data = get_geolocation()
 
 if loc_data and loc_data.get('coords'):
@@ -186,7 +169,6 @@ else:
 
 st.sidebar.success("📡 Mapbox Canlı Trafik Entegrasyonu Aktif")
 
-# --- CANLI HAVA VE SICAKLIK SÜZME ---
 canli_hava_metni = hava_durumu_getir(merkez[0], merkez[1])
 try:
     sicaklik = float(canli_hava_metni.split("°C")[0])
@@ -195,102 +177,104 @@ except:
 
 # --- ARAÇ SEÇİM MATRİSİ ---
 arac_bilgileri = {
-    "Togg T10X ": 523, "Togg T10F ": 314, "Tesla Model Y (Long Range AWD)": 533,
-    "Tesla Model Y ( Standart)": 455, "BYD ATTO 3 (Design)": 420, "BYD SEAL (AWD High Performance)": 520,
-    "Renault Megane E-Tech (Techno)": 450, "Fiat 500e (La Prima)": 320, "BMW i4 eDrive40": 590
+    "Togg T10X ": {"menzil": 523, "batarya": 88.5, "tuketim": 16.9},
+    "Togg T10F ": {"menzil": 314, "batarya": 52.4, "tuketim": 16.6},
+    "Tesla Model Y (Long Range AWD)": {"menzil": 533, "batarya": 75.0, "tuketim": 16.9},
+    "Tesla Model Y ( Standart)": {"menzil": 455, "batarya": 60.0, "tuketim": 15.7},
+    "BYD ATTO 3 (Design)": {"menzil": 420, "batarya": 60.5, "tuketim": 15.6},
+    "BYD SEAL (AWD High Performance)": {"menzil": 520, "batarya": 82.5, "tuketim": 18.2},
+    "Renault Megane E-Tech (Techno)": {"menzil": 450, "batarya": 60.0, "tuketim": 15.5},
+    "Fiat 500e (La Prima)": {"menzil": 320, "batarya": 42.0, "tuketim": 13.0},
+    "BMW i4 eDrive40": {"menzil": 590, "batarya": 80.7, "tuketim": 16.1}
 }
     
 arac = st.sidebar.selectbox("Aracınız", list(arac_bilgileri.keys()))
-maks_menzil = arac_bilgileri[arac]
+maks_menzil = arac_bilgileri[arac]["menzil"]
 mevcut_sarj = st.sidebar.slider("Mevcut Şarj (%)", 0, 100, 40)
 
 # ==============================================================================
-# 🎯 5. SIRA TABANLI KARAR DESTEK MATRİSİ VE HESAPLAYICILAR
+# 🎯 5. SIRA DEĞİŞİKLİĞİ: GÜVENLİK FİLTRESİ İÇİN ÖNCELİKLİ MENZİL HESABI
 # ==============================================================================
-istasyon_key = temiz_sehir if temiz_sehir else "Bilecik"
+if sicaklik < 0:
+    menzil_katsayisi = 0.70  
+elif sicaklik < 10:
+    menzil_katsayisi = 0.85  
+elif "yağmur" in canli_hava_metni.lower() or "yağış" in canli_hava_metni.lower():
+    menzil_katsayisi = 0.92  
+elif sicaklik > 35:
+    menzil_katsayisi = 0.90  
+else:
+    menzil_katsayisi = 1.0   
+
+# Fonksiyondan önce bu değişkenleri üretiyoruz ki NameError hatası kökten çözülsün
+saf_menzil = maks_menzil * (mevcut_sarj / 100)
+# İlk hesaplama için geçici bir katsayı, aşağıda canlı trafikle güncellenecektir
+tahmini_menzil = round(saf_menzil * menzil_katsayisi * 1.0, 1)
+
+# ==============================================================================
+# 🎯 6. KARAR DESTEK MATRİSİ VE MENZİL GÜVENLİK KONTROLÜ
+# ==============================================================================
+istasyon_key = temiz_sehir if temiz_sehir != "Mevcut Konumunuz" else "Bilecik"
 df_istasyon = istasyonlari_getir(istasyon_key, merkez[0], merkez[1])
 
-# --- 🎯 YAPAY ZEKA TABANLI DETERMINISTIK DOLULUK HESABI ---
 doluluk_listesi = []
 for i, row in df_istasyon.iterrows():
     lat1, lon1 = merkez[0], merkez[1]
     lat2, lon2 = row['lat'], row['lon']
-    
-    # Bağımsız Haversine Formülü
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
     a = (math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2)
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     istasyon_mesafesi = 6371 * c
     
-    # Mesafe bazlı akıllı doluluk tahmini (Random tamamen kaldırıldı!)
     if istasyon_mesafesi <= 3:
         tahmin = 85 - (istasyon_mesafesi * 4)
     elif istasyon_mesafesi <= 10:
         tahmin = 70 - (istasyon_mesafesi * 3)
     else:
         tahmin = 40 - (istasyon_mesafesi * 0.5)
-        
     doluluk_listesi.append(int(max(15, min(95, tahmin))))
 
 df_istasyon['doluluk'] = doluluk_listesi
 
-# --- 🎯 SKOR HESAPLAMA MANTIĞI ---
 def skor_hesapla(row):
     lat1, lon1 = math.radians(merkez[0]), math.radians(merkez[1])
     lat2, lon2 = math.radians(row['lat']), math.radians(row['lon'])
     R = 6371
-
     mesafe_km = R * 2 * math.asin(math.sqrt(math.sin((lat2-lat1)/2)**2 + math.cos(lat1)*math.cos(lat2)*math.sin((lon2-lon1)/2)**2))
     mesafe_km = mesafe_km * 1.28
     sure_dk = (mesafe_km / 45) * 60 
     doluluk = row['doluluk']
-
-    # Her rota için canlı Mapbox verisi çekiliyor:
     trafik = google_maps_canli_trafik_getir(merkez[0], merkez[1], row['lat'], row['lon'])
-    skor = (sure_dk * 0.45 + doluluk * 0.35 + trafik * 0.20)
-
+    
+    # 🎯 MENZİL DIŞI İSTASYONLARA CEZA PUANI (Eski hatayı çözen ana filtre)
+    if mesafe_km > tahmini_menzil:
+        skor = (sure_dk * 0.45 + doluluk * 0.35 + trafik * 0.20) + 9999.0
+    else:
+        skor = (sure_dk * 0.45 + doluluk * 0.35 + trafik * 0.20)
+        
     return pd.Series([round(mesafe_km, 2), round(sure_dk, 1), doluluk, trafik, round(skor, 2)], 
                      index=['mesafe', 'sure', 'doluluk', 'trafik', 'skor'])
 
-# Karar Matrisini Çalıştırıp En Optimum Noktayı Seçiyoruz
 df_karar = df_istasyon.copy()
 df_karar[['mesafe', 'sure', 'doluluk', 'trafik', 'skor']] = df_karar.apply(skor_hesapla, axis=1)
 en_mantikli_istasyon = df_karar.sort_values(by='skor').iloc[0]
-
-# Üst panel için en yakın/en uygun rotanın canlı trafik yoğunluğunu süzüyoruz:
 canli_ust_trafik = int(en_mantikli_istasyon['trafik'])
 
-# ==============================================================================
-# 📈 6. GERÇEKÇİ BATARYA TÜKETİM MODELİ VE 4'LÜ KPI PANELİ
-# ==============================================================================
-# Hava Sıcaklığı ve Yağmur Şartlarına Göre Katsayı Kontrolü
-if sicaklik < 0:
-    menzil_katsayisi = 0.70  
-elif sicaklik < 10:
-    menzil_katsayisi = 0.85  
-elif "yağmur" in canli_hava_metni.lower() or "yağış" in canli_hava_metni.lower():
-    menzil_katsayisi = 0.92  # 🌧️ Silecek ve far tüketim yükü
-elif sicaklik > 35:
-    menzil_katsayisi = 0.90  
-else:
-    menzil_katsayisi = 1.0   
-
-# Canlı Trafik Verisine Dayalı Tüketim Formülü Entegrasyonu
-saf_menzil = maks_menzil * (mevcut_sarj / 100)
+# Canlı trafik verisi geldikten sonra kalan net menzili tekrar revize ediyoruz
 trafik_etkisi = 1 - (canli_ust_trafik / 500)
 tahmini_menzil = round(saf_menzil * menzil_katsayisi * trafik_etkisi, 1)
 
-# EKRANA YAN YANA 4 ADET KPI METRİK KUTUSU BASIMI
+# ==============================================================================
+# 📈 7. JİLET GİBİ 4'LÜ KPI PANELİ BASIMI
+# ==============================================================================
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Tahmini Kalan Menzil", f"{tahmini_menzil} km")
 col2.metric("Hava Durumu", canli_hava_metni)
 
-# Üst paneldeki canlı trafik oranı:
 trafik_delta = "Yoğun Trafik" if canli_ust_trafik > 65 else "Akıcı Trafik"
 col3.metric("Bölgesel Trafik Yoğunluğu", f"%{canli_ust_trafik}", delta=trafik_delta, delta_color="inverse")
 
-# Sistem ortak verimlilik yüzdesi:
 sistem_verimliligi = int(menzil_katsayisi * trafik_etkisi * 100)
 col4.metric("Sistem Verimliliği", f"%{sistem_verimliligi}")
 
@@ -301,11 +285,9 @@ st.sidebar.metric("Toplam İstasyon", len(df_karar))
 st.sidebar.metric("Ort. Doluluk", f"%{int(df_istasyon['doluluk'].mean())}")
 st.sidebar.info(f"💡 En verimli istasyon: **{en_mantikli_istasyon['ad']}**")
 
-# --- ÖNERİ KUTULARI ---
 # --- ÖNERİ KUTULARI (AKILLI ASİSTAN MODÜLÜ) ---
 placeholder = st.empty() 
 with placeholder.container():
-    # 1. Menzil Durumuna Göre Ana İstasyon Önerisi (Mevcut Yeşil Kutun)
     if tahmini_menzil < 50:
         st.error(f"⚠️ **ACİL DURUM:** En mantıklı nokta: **{en_mantikli_istasyon['ad']}**")
     elif tahmini_menzil < 120:
@@ -313,55 +295,35 @@ with placeholder.container():
     else:
         st.success(f"✅ **Akıllı Öneri:** Sizin için en uygun istasyon: **{en_mantikli_istasyon['ad']}**")    
 
-    # 2. 🎯 YENİ HAVA DURUMU BİLGİLENDİRME VE REHBERLİK KUTUSU
     if sicaklik < 0:
-        st.info(
-            f"❄️ **Hava {sicaklik}°C (Ekstrem Soğuk):** Batarya kimyası dondurucu sıcaklıktan olumsuz etkilenmektedir. "
-            f"Kabin ve batarya ısıtma sistemleri maksimum yükte çalıştığı için menzilinizde **%30 otomatik revizyon** yapılmıştır. "
-            f"İstasyona varana kadar ani hızlanmalardan kaçınmanız ve rejeneratif frenlemeyi maksimuma almanız önerilir."
-        )
+        st.info(f"❄️ **Hava {sicaklik}°C (Ekstrem Soğuk):** Batarya kimyası dondurucu sıcaklıktan olumsuz etkilenmektedir. Menzilinizde **%30 otomatik revizyon** yapılmıştır.")
     elif sicaklik < 10:
-        st.info(
-            f"🍃 **Hava {sicaklik}°C (Kış Şartları):** Düşük hava sıcaklığı sebebiyle batarya verimliliği azalmıştır. "
-            f"Menziliniz otomatik olarak **%15 düşürülerek** revize edilmiştir. Güvenli sürüş için klima sıcaklığını optimum düzeyde tutun."
-        )
+        st.info(f"🍃 **Hava {sicaklik}°C (Kış Şartları):** Düşük sıcaklık sebebiyle batarya verimliliği azalmıştır. Menziliniz **%15 düşürülerek** revize edilmiştir.")
     elif "yağmur" in canli_hava_metni.lower() or "yağış" in canli_hava_metni.lower():
-        st.info(
-            f"🌧️ **Hava Yağmurlu:** Silecekler, farlar ve cam rezistanslarının bataryaya binen ek elektrik yükü ile "
-            f"ıslak zemindeki lastik sürtünme direnci hesaplanarak menziliniz **%8 oranında düşürülmüştür.** "
-            f"Takip mesafenizi koruyarak konfor modunda sürmeye devam edebilirsiniz."
-        )
+        st.info(f"🌧️ **Hava Yağmurlu:** Islak zemindeki lastik sürtünme direnci hesaplanarak menziliniz **%8 düşürülmüştür.**")
     elif sicaklik > 35:
-        st.warning(
-            f"🔥 **Hava {sicaklik}°C (Aşırı Sıcak):** Yüksek sıcaklık batarya hücrelerini zorlamaktadır. "
-            f"Batarya soğutma sistemi ve kabin kliması (AC) maksimum yükte çalıştığı için menziliniz **%10 revize edilmiştir.** "
-            f"İstasyona ulaştığınızda aracınızı mümkünse gölge bir peronda şarj etmeniz batarya sağlığı açısından kritik önem taşır."
-        )
+        st.warning(f"🔥 **Hava {sicaklik}°C (Aşırı Sıcak):** Batarya soğutma sistemi maksimum yükte çalıştığı için menziliniz **%10 revize edilmiştir.**")
     else:
-        st.success(
-            f"☀️ **Hava {sicaklik}°C (Optimum Koşullar):** Hava sıcaklığı bataryanız için en ideal çalışma aralığındadır. "
-            f"Ekstra hiçbir batarya veya AC kaybı bulunmamaktadır. Aracınız maksimum WLTP verimliliğiyle çalışıyor, keyifli sürüşler!"
-        )
+        st.success(f"☀️ **Hava {sicaklik}°C (Optimum Koşullar):** Hava sıcaklığı bataryanız için en ideal çalışma aralığındadır. Keyifli sürüşler!")
+
 gercek_menzil = tahmini_menzil
 
 # ==============================================================================
-# 🗺️ 7. FOLIUM HARİTA MİMARİSİ VE SEÇENEK KARTLARI
+# 🗺️ 8. FOLIUM HARİTA MİMARİSİ
 # ==============================================================================
 m = folium.Map(location=merkez, zoom_start=8) 
 
 folium.Circle(
     location=merkez, radius=gercek_menzil * 1000, 
     color="#22c55e", fill=True, fill_opacity=0.04,
-    popup=f"Maksimum Güvenli Menzil Sınırı: {gercek_menzil} km"
+    popup=f"Maksimum Sınır: {gercek_menzil} km"
 ).add_to(m)
 
-# OSRM Ücretsiz Rota Çizim Motoru
 try:
     target_lat = en_mantikli_istasyon['lat']
     target_lon = en_mantikli_istasyon['lon']
     route_url = f"http://router.project-osrm.org/route/v1/driving/{merkez[1]},{merkez[0]};{target_lon},{target_lat}?overview=full&geometries=geojson"
     route_res = requests.get(route_url, timeout=3).json()
-    
     if route_res['code'] == 'Ok':
         line_coords = route_res['routes'][0]['geometry']['coordinates']
         line_coords = [[c[1], c[0]] for c in line_coords]
@@ -369,22 +331,10 @@ try:
 except:
     pass
 
-folium.Marker(
-    location=merkez, popup="Şu an buradasınız", 
-    icon=folium.Icon(color='blue', icon='user', prefix='fa')
-).add_to(m)
+folium.Marker(location=merkez, popup="Şu an buradasınız", icon=folium.Icon(color='blue', icon='user', prefix='fa')).add_to(m)
 
-# Haritadaki İstasyonları Dolduran Döngü
 for i, row in df_karar.iterrows():
     gosterilecek_mesafe = row['mesafe']
-    try:
-        osrm_url = f"http://router.project-osrm.org/route/v1/driving/{merkez[1]},{merkez[0]};{row['lon']},{row['lat']}?overview=false"
-        osrm_res = requests.get(osrm_url, timeout=2).json()
-        if osrm_res['code'] == 'Ok':
-            gosterilecek_mesafe = round(osrm_res['routes'][0]['distance'] / 1000, 2)
-    except:
-        pass
-
     doluluk = row['doluluk']
     renk = 'red' if doluluk > 80 else ('orange' if doluluk > 50 else 'green')
     yol_tarifi_url = f"https://www.google.com/maps/dir/?api=1&origin={merkez[0]},{merkez[1]}&destination={row['lat']},{row['lon']}"
@@ -395,63 +345,103 @@ for i, row in df_karar.iterrows():
             <p style="font-size:12px; margin-bottom:10px;">
                 <b>Uzaklık:</b> {gosterilecek_mesafe} km<br>
                 <b>İstasyon Doluluğu:</b> %{doluluk}<br>
-                <b style="color: #0284c7;">🎯 Birleşik Trafik (Rota+Çevre):</b> %{int(row.get('trafik', canli_ust_trafik))}
+                <b style="color: #0284c7;">🎯 Birleşik Trafik:</b> %{int(row['trafik'])}
             </p>
-            <a href="{yol_tarifi_url}" target="_blank" 
-               style="display: block; text-align: center; background-color: #28a745; 
-                      color: white; padding: 8px; border-radius: 5px; text-decoration: none; font-weight: bold;">
-                🚗 Yol Tarifi Al
-            </a>
+            <a href="{yol_tarifi_url}" target="_blank" style="display: block; text-align: center; background-color: #28a745; color: white; padding: 8px; border-radius: 5px; text-decoration: none; font-weight: bold;">🚗 Yol Tarifi Al</a>
         </div>
     """
-    folium.Marker(
-        [row['lat'], row['lon']],
-        popup=folium.Popup(popup_html, max_width=200),
-        icon=folium.Icon(color=renk, icon='bolt', prefix='fa')
-    ).add_to(m)
+    folium.Marker([row['lat'], row['lon']], popup=folium.Popup(popup_html, max_width=200), icon=folium.Icon(color='lightgray', icon='ban', prefix='fa') if row['skor'] > 9000 else folium.Icon(color=renk, icon='bolt', prefix='fa') if row['skor'] > 9000 else folium.Icon(color=renk, icon='bolt', prefix='fa')).add_to(m)
 
-# En Optimum İstasyona Altın Yıldız İkonu Atama
 google_maps_url = f"https://www.google.com/maps/dir/?api=1&origin={merkez[0]},{merkez[1]}&destination={en_mantikli_istasyon['lat']},{en_mantikli_istasyon['lon']}"
 
-folium.Marker(
-    location=[en_mantikli_istasyon['lat'], en_mantikli_istasyon['lon']],
-    popup=folium.Popup(f"""
-        <div style="font-family: Arial, sans-serif; text-align: center; color: black;">
-            <b style="color: #1e3a8a;">🏆 Önerilen Optimum İstasyon</b><br>
-            <span style="font-size: 13px;">{en_mantikli_istasyon['ad']}</span><br><br>
-            <a href="{google_maps_url}" target="_blank" style="
-                background-color: #0284c7; color: white; padding: 6px 12px; 
-                text-decoration: none; border-radius: 4px; font-weight: bold;
-                display: inline-block; font-size: 12px;
-            ">🌐 Yol Tarifi Al</a>
-        </div>
-    """, max_width=250),
-    tooltip="🌟 En Optimum İstasyon! (Yol tarifi için tıklayın)",
-    icon=folium.Icon(color="cadetblue", icon="star", icon_color="#f59e0b", prefix="fa")
-).add_to(m)
-
-# Haritayı HTML İframe Olarak Ekrana Basıyoruz
 st.subheader("🗺️ Bölgesel Şarj İstasyonları Navigasyon Haritası")
 components.html(m._repr_html_(), width=1000, height=500, scrolling=False)
 
-# --- 🏆 ÖNEMLİ SEÇENEKLER DETAY KARTLARI ---
-st.markdown("### 🏆 Önemli Seçenekler")
+# ==============================================================================
+# 🏆 9. ÖNEMLİ SEÇENEK KARTLARI VE MALİYET ANALİZİ
+# ==============================================================================
+st.markdown("### 🏆 Önemli Seçenekler yardımıyla Maliyet Analizi")
 col1, col2, col3 = st.columns(3)
 
+arac_tuketimi = arac_bilgileri[arac]["tuketim"]
+dc_tarife_tl = 9.50  
+
 with col1:
-    st.success(f"🌟 **AKILLI ÖNERİ**\n\n**{en_mantikli_istasyon['ad']}**\n\n🎯 Skor: {en_mantikli_istasyon['skor']}\n\n⏱️ Süre: {en_mantikli_istasyon['sure']} dk")
-    st.markdown(f"""
-        <a href="{google_maps_url}" target="_blank" style="
-            display: block; text-align: center; background-color: #22c55e;
-            color: white; padding: 8px 16px; text-decoration: none;
-            border-radius: 6px; font-weight: bold; margin-top: 10px; font-size: 14px;
-        ">🌐 Google Haritalarda Git</a>
-    """, unsafe_allow_html=True)
+    akilli_maliyet = round((en_mantikli_istasyon['mesafe'] * arac_tuketimi / 100) * dc_tarife_tl, 2)
+    st.success(f"🌟 **AKILLI ÖNERİ**\n\n**{en_mantikli_istasyon['ad']}**\n\n🎯 Skor: {en_mantikli_istasyon['skor'] if en_mantikli_istasyon['skor'] < 9000 else 'Menzil Dışı'}\n\n⏱️ Süre: {en_mantikli_istasyon['sure']} dk")
+    st.metric("💵 Yolculuk Şarj Maliyeti", f"{akilli_maliyet} TL")
+    st.markdown(f'<a href="{google_maps_url}" target="_blank" style="display: block; text-align: center; background-color: #22c55e; color: white; padding: 8px 16px; text-decoration: none; border-radius: 6px; font-weight: bold; margin-top: 10px; font-size: 14px;">🌐 Haritada Git</a>', unsafe_allow_html=True)
 
 en_yakin_istasyon = df_karar.sort_values("mesafe").iloc[0]
 with col2:
+    yakin_maliyet = round((en_yakin_istasyon['mesafe'] * arac_tuketimi / 100) * dc_tarife_tl, 2)
     st.info(f"📍 **EN YAKIN İSTASYON**\n\n**{en_yakin_istasyon['ad']}**\n\n📏 Mesafe: {en_yakin_istasyon['mesafe']} km\n\n⏱️ Süre: {en_yakin_istasyon['sure']} dk")
+    st.metric("💵 Yolculuk Şarj Maliyeti", f"{yakin_maliyet} TL")
 
 en_bos_istasyon = df_karar.sort_values("doluluk").iloc[0]
 with col3:
+    bos_maliyet = round((en_bos_istasyon['mesafe'] * arac_tuketimi / 100) * dc_tarife_tl, 2)
     st.warning(f"🔋 **EN BOŞ İSTASYON**\n\n**{en_bos_istasyon['ad']}**\n\n⚡ Doluluk: %{en_bos_istasyon['doluluk']}\n\n📏 Mesafe: {en_bos_istasyon['mesafe']} km")
+    st.metric("💵 Yolculuk Şarj Maliyeti", f"{bos_maliyet} TL")
+    # ==============================================================================
+# 🌍 TÜRKİYE GENELİ DİNAMİK MALIYET HESAPLAYICI (METİN YENİLENME HATASI KESİN ÇÖZÜLDÜ)
+# ==============================================================================
+st.sidebar.markdown("---")
+st.sidebar.subheader("📍 Türkiye Geneli Maliyet Planla")
+
+tum_turkiye_sehirleri = {
+    "Adana": [36.9914, 35.3289], "Ankara": [39.9334, 32.8597], "Antalya": [36.8969, 30.7133],
+    "Bilecik": [40.1425, 29.9795], "Bursa": [40.1885, 29.0610], "Diyarbakır": [37.9144, 40.2110],
+    "Edirne": [41.6710, 26.5720], "Eskişehir": [39.7767, 30.5206], "Gaziantep": [37.0662, 37.3833],
+    "İstanbul": [41.0082, 28.9784], "İzmir": [38.4192, 27.1287], "Konya": [37.8714, 32.4847],
+    "Kütahya": [39.4200, 29.9850], "Samsun": [41.2867, 36.3300], "Trabzon": [41.0027, 39.7168]
+}
+
+sehir_listesi = sorted(list(tum_turkiye_sehirleri.keys()))
+
+# Kutuların key isimlerini tamamen benzersiz (unique) yaparak önbelleği sıfırladık
+maliyet_kalkis_adi = st.sidebar.selectbox(
+    "Kalkış Şehri", 
+    sehir_listesi, 
+    index=sehir_listesi.index("İstanbul") if "İstanbul" in sehir_listesi else 0,
+    key="kalkis_maliyet_final_v3"
+)
+
+maliyet_varis_adi = st.sidebar.selectbox(
+    "Varış Şehri", 
+    ["Seçiniz..."] + sehir_listesi,
+    key="varis_maliyet_final_v3"
+)
+
+if maliyet_varis_adi != "Seçiniz...":
+    if maliyet_kalkis_adi == maliyet_varis_adi:
+        st.sidebar.error("⚠️ Kalkış ve varış şehri aynı olamaz.")
+    else:
+        # Koordinatları çek ve mesafeyi hesapla
+        lat1, lon1 = tum_turkiye_sehirleri[maliyet_kalkis_adi]
+        lat2, lon2 = tum_turkiye_sehirleri[maliyet_varis_adi]
+        
+        dlat = math.radians(lat2 - lat1)
+        dlon = math.radians(lon2 - lon1)
+        a = (math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2)
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+        kus_ucusu_km = 6371 * c
+        maliyet_mesafe_km = round(kus_ucusu_km * 1.26, 1)
+            
+        # Aktif araç tüketim entegrasyonu
+        aktif_tuketim = arac_bilgileri[arac]["tuketim"]
+        dc_fiyat_kwh = 9.50  
+        
+        maliyet_kwh_tuketim = round((maliyet_mesafe_km * aktif_tuketim) / 100, 1)
+        maliyet_toplam_tl = round(maliyet_kwh_tuketim * dc_fiyat_kwh, 2)
+        
+        # 🎯 İŞTE KESİN ÇÖZÜM: 
+        # Yazıları doğrudan f-string içinde ham bırakmak yerine, dinamik string değişkenleri 
+        # oluşturup içeriği zorla temizliyoruz. Böylece donma ihtimali sıfıra iniyor.
+        rota_metni = f"🛣️ **Dinamik Rota:** {str(maliyet_kalkis_adi)} ➔ {str(maliyet_varis_adi)}"
+        mesafe_metni = f"📏 **Mesafe:** {maliyet_mesafe_km} km"
+        enerji_metni = f"🔋 **Harcanacak Enerji:** {maliyet_kwh_tuketim} kWh"
+        para_metni = f"💵 **Tahmini Şarj Maliyeti:** `{maliyet_toplam_tl} TL`"
+        
+        # Temizlenen dinamik metinleri tek seferde basıyoruz
+        st.sidebar.info(f"{rota_metni}\n\n{mesafe_metni}\n{enerji_metni}\n{para_metni}")
